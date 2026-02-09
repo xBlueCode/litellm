@@ -51,16 +51,23 @@ class UserAPIKeyAuthExceptionHandler:
             proxy_logging_obj,
         )
 
-        if (
-            PrismaDBExceptionHandler.should_allow_request_on_db_unavailable()
-            and PrismaDBExceptionHandler.is_database_connection_error(e)
-        ):
+        # Check if this is a DB connection error AND if we should allow requests when DB is unavailable
+        is_db_connection_error = PrismaDBExceptionHandler.is_database_connection_error(e)
+        should_allow_on_db_unavailable = PrismaDBExceptionHandler.should_allow_request_on_db_unavailable()
+
+        if is_db_connection_error and should_allow_on_db_unavailable:
             # log this as a DB failure on prometheus
             proxy_logging_obj.service_logging_obj.service_failure_hook(
                 service=ServiceTypes.DB,
                 call_type="get_key_object",
                 error=e,
                 duration=0.0,
+            )
+
+            verbose_proxy_logger.warning(
+                f"Database connection error detected during authentication. "
+                f"Allowing request to proceed due to allow_requests_on_db_unavailable=True. "
+                f"Error: {str(e)}"
             )
 
             return UserAPIKeyAuth(

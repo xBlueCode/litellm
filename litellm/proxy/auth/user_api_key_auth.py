@@ -826,6 +826,27 @@ async def _user_api_key_auth_builder(  # noqa: PLR0915
                     e
                 )  # moving from .warning to .debug as it spams logs when team missing from cache.
 
+        ## Check if DB is available for non-master-key auth
+        ## This check must happen BEFORE master key validation
+        ## to prevent 401 errors when DB is unavailable but master key is valid
+        if (
+            prisma_client is None
+        ):  # if both master key + user key submitted, and user key != master key, and no db connected
+            # If master key is set and matches, allow the request even without DB
+            try:
+                is_master_key_valid_early = secrets.compare_digest(api_key, master_key)  # type: ignore
+            except Exception:
+                is_master_key_valid_early = False
+
+            if not is_master_key_valid_early:
+                # Not master key and no DB -> raise error
+                raise ProxyException(
+                    message="No connected db.",
+                    type=ProxyErrorTypes.no_db_connection,
+                    code=400,
+                    param=None,
+                )
+
         try:
             is_master_key_valid = secrets.compare_digest(api_key, master_key)  # type: ignore
         except Exception:
@@ -879,11 +900,13 @@ async def _user_api_key_auth_builder(  # noqa: PLR0915
                 f"Tried to access route={route}, which is only for MASTER KEY"
             )
 
-        ## Check DB
+        ## Check DB - this check is now redundant due to earlier check, but kept for clarity
+        ## The early check ensures master key works even when DB is None
 
         if (
             prisma_client is None
         ):  # if both master key + user key submitted, and user key != master key, and no db connected, raise an error
+            # This should not be reached due to the early check above, but kept as a safety net
             raise ProxyException(
                 message="No connected db.",
                 type=ProxyErrorTypes.no_db_connection,

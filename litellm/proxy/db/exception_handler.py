@@ -33,13 +33,25 @@ class PrismaDBExceptionHandler:
     def is_database_connection_error(e: Exception) -> bool:
         """
         Returns True if the exception is from a database outage / connection error
+
+        Checks for:
+        - httpx connection errors (ConnectError, ReadError, ReadTimeout)
+        - Prisma errors
+        - ProxyException with no_db_connection type
         """
         import prisma
 
         if isinstance(e, DB_CONNECTION_ERROR_TYPES):
             return True
         if isinstance(e, prisma.errors.PrismaError):
-            return True
+            # Check if the error message indicates connection issues
+            error_str = str(e).lower()
+            if any(pattern in error_str for pattern in [
+                'connection', 'connect', 'timeout', 'timed out',
+                'unreachable', 'unavailable', 'pool', 'all connection attempt failed'
+            ]):
+                return True
+            return True  # Treat all Prisma errors as potential connection issues
         if isinstance(e, ProxyException) and e.type == ProxyErrorTypes.no_db_connection:
             return True
         return False
